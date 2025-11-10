@@ -49,7 +49,7 @@ services:
       RABBITMQ_URL: amqp://admin:admin123@rabbitmq_broker:5672/
       FLASK_ENV: development
     ports:
-      - "5000:5000"
+      - "8080:8080"
     depends_on:
       - postgres
       - redis
