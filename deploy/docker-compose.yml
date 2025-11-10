@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: notif_user
+      POSTGRES_PASSWORD: notif_pass
+      POSTGRES_DB: notification_system
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - notif_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis_cache
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - notif_network
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq_broker
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - notif_network
+  
+  notif_api:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    container_name: notif_api_service
+    environment:
+      DATABASE_URL: postgres://notif_user:notif_pass@postgres_db:5432/notification_system
+      REDIS_URL: redis://redis_cache:6379/0
+      RABBITMQ_URL: amqp://admin:admin123@rabbitmq_broker:5672/
+      FLASK_ENV: development
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    networks:
+      - notif_network
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+
+networks:
+  notif_network:
+    driver: bridge
