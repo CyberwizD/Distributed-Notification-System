@@ -3,7 +3,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # RabbitMQ Settings
-    rabbitmq_url: str = "amqp://guest:guest@rabbitmq:5672/"
+    rabbitmq_url: str = "amqp://admin:guest@rabbitmq:5672/"
     email_queue: str = "email.queue"
     failed_queue: str = "failed.queue"
     
