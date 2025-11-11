@@ -2,6 +2,7 @@ import pika
 import json
 import logging
 from app.config.settings import settings
+from app.email_sender import EmailSender
 
 class BaseConsumer:
     def __init__(self):
@@ -78,3 +79,50 @@ class BaseConsumer:
         if self.connection and not self.connection.is_closed:
             self.connection.close()
             self.logger.info("🛑 Consumer stopped")
+            
+            
+
+
+class EmailConsumer(BaseConsumer):
+    def __init__(self):
+        super().__init__()
+        self.email_sender = EmailSender()
+    
+    def process_message(self, ch, method, properties, body):
+        """Process email messages and send actual emails"""
+        try:
+            message_data = json.loads(body)
+            self.logger.info(f"📧 Processing email message: {message_data}")
+            
+            # Extract email data
+            recipient_email = message_data.get('recipient_email')
+            template_id = message_data.get('template_id', 'welcome')
+            subject = message_data.get('subject', 'Notification from Our Service')
+            variables = message_data.get('variables', {})
+            
+            if not recipient_email:
+                self.logger.error("❌ No recipient email provided")
+                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                return
+            
+            # Send actual email
+            import asyncio
+            success = asyncio.run(
+                self.email_sender.send_email(
+                    to_email=recipient_email,
+                    subject=subject,
+                    template_id=template_id,
+                    variables=variables
+                )
+            )
+            
+            if success:
+                self.logger.info(f"✅ Email sent successfully to {recipient_email}")
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+            else:
+                self.logger.error(f"❌ Failed to send email to {recipient_email}")
+                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Email processing failed: {e}")
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
