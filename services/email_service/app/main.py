@@ -176,20 +176,24 @@ async def test_email(recipient_email: str = "test@example.com"):
     }
 
 @app.on_event("startup")
-async def startup_event():
-    """Start RabbitMQ consumer in background thread"""
-    def start_consumer():
+def startup_event():
+    consumer = EmailConsumer()
+    thread = threading.Thread(target=consumer.start_consuming, daemon=True)
+    thread.start()
+    app.state.email_consumer = consumer
+    app.state.consumer_thread = thread
+    logger.info("🚀 Email consumer thread started")
+
+@app.on_event("shutdown")
+def shutdown_event():
+    consumer = getattr(app.state, "email_consumer", None)
+    if consumer:
         try:
-            consumer = EmailConsumer()
-            consumer.start_consuming()
-        except Exception as e:
-            logger.warning(f"⚠️ RabbitMQ not available: {e}")
-            logger.info("🔄 Service running without RabbitMQ - ready when RabbitMQ starts")
-    
-    consumer_thread = threading.Thread(target=start_consumer, daemon=True)
-    consumer_thread.start()
-    logger.info("🚀 Email Service started!")
-    
+            consumer.stop_consuming()
+        except Exception:
+            pass
+    logger.info("🛑 Shutdown complete")
+
 @app.get("/")
 async def root():
     return {

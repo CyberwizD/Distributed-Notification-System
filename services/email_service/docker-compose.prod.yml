@@ -1,0 +1,29 @@
+version: "3.8"
+services:
+  email-service:
+    image: toby1907/email-service:0.1.0
+    ports:
+      - "2525:2525"
+    secrets:
+      - smtp_username
+      - smtp_password
+    environment:
+      SMTP_HOST: "smtp.gmail.com"
+      SMTP_PORT: "${SMTP_PORT}" # use .env value
+      SMTP_USERNAME_FILE: "/run/secrets/smtp_username"
+      SMTP_PASSWORD_FILE: "/run/secrets/smtp_password"
+      RABBITMQ_URL: "amqp://admin:admin123@rabbitmq:5672/"
+    depends_on:
+      - rabbitmq
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+secrets:
+  smtp_username:
+    file: ./secrets/smtp_username.txt
+  smtp_password:
+    file: ./secrets/smtp_password.txt

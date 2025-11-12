@@ -1,6 +1,9 @@
-import pika
-import json
+import time
 import logging
+import pika
+from urllib.parse import urlparse
+import json
+import os
 from app.config.settings import settings
 from app.email_sender import EmailSender
 
@@ -87,6 +90,38 @@ class EmailConsumer(BaseConsumer):
     def __init__(self):
         super().__init__()
         self.email_sender = EmailSender()
+
+    def start_consuming(self):
+        max_retries = 10
+        delay = 1.0
+        for attempt in range(1, max_retries + 1):
+            try:
+                # reuse BaseConsumer.connect() which sets up the queues / DLQ
+                if self.connect():
+                    self.logger.info("✅ Connected to RabbitMQ")
+                    break
+            except Exception as exc:
+                self.logger.warning("RabbitMQ connect attempt %d/%d failed: %s", attempt, max_retries, exc)
+
+            if attempt == max_retries:
+                self.logger.error("❌ Failed to connect to RabbitMQ after %d attempts", max_retries)
+                return False
+
+            time.sleep(delay)
+            delay = min(delay * 2, 10)
+
+        try:
+            # Start consuming messages
+            self.channel.basic_qos(prefetch_count=1)
+            self.channel.basic_consume(
+                queue=settings.email_queue,
+                on_message_callback=self.process_message
+            )
+            self.logger.info(f"🔄 Starting consumer for {settings.email_queue}")
+            self.channel.start_consuming()
+        except Exception as e:
+            self.logger.error(f"❌ Consumer error: {e}")
+            return False
     
     def process_message(self, ch, method, properties, body):
         """Process email messages and send actual emails"""
