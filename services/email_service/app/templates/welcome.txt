@@ -1,0 +1,6 @@
+Hello {{ name }},
+
+Welcome! Your verification code is {{ verification_code }}.
+
+Thanks,
+The Team

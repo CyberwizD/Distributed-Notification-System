@@ -1,158 +1,183 @@
 # app/email_sender.py
-import aiosmtplib
 import jinja2
+import aiosmtplib
 import os
-from typing import Dict, Any
-import logging
-import asyncio
 from email.message import EmailMessage
 from dotenv import load_dotenv, find_dotenv
-from app.config.settings import SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD
+from app.config.settings import settings
+import ssl
+import asyncio
+from typing import Optional, Dict, Any
+import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+load_dotenv(find_dotenv())
 
 class EmailSender:
     def __init__(self):
-        self.smtp_host = SMTP_HOST
-        self.smtp_port = SMTP_PORT
-        self.smtp_username = SMTP_USERNAME
-        self.smtp_password = SMTP_PASSWORD
-        
-        # Initialize templates
+        # use settings values (with sensible defaults)
+        self.smtp_host: str = settings.smtp_host or "smtp.gmail.com"
+        self.smtp_port: int = int(settings.smtp_port or 465)
+        self.smtp_username: Optional[str] = settings.smtp_username
+        self.smtp_password: Optional[str] = settings.smtp_password
+
+        # Initialize templates (keep builtin templates if you have them)
         self.template_env = jinja2.Environment(
-            loader=jinja2.DictLoader(self._get_builtin_templates())
+            loader=jinja2.DictLoader(self._get_builtin_templates() if hasattr(self, "_get_builtin_templates") else {})
         )
-    
-    def _get_builtin_templates(self) -> Dict[str, str]:
-        """Built-in email templates"""
-        return {
-            "welcome": """
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 20px; }
-                    .container { max-width: 600px; margin: 0 auto; }
-                    .header { background: #4F46E5; color: white; padding: 20px; text-align: center; }
-                    .content { padding: 20px; background: #f9f9f9; }
-                    .footer { padding: 20px; text-align: center; color: #666; }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <h1>Welcome to Our Service! 🎉</h1>
-                    </div>
-                    <div class="content">
-                        <h2>Hello {{name}},</h2>
-                        <p>Thank you for joining our notification service. We're excited to have you on board!</p>
-                        <p><strong>Your verification code: {{verification_code}}</strong></p>
-                        <p>Use this code to verify your account and get started.</p>
-                    </div>
-                    <div class="footer">
-                        <p>Best regards,<br>The Notification Team</p>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
-        }
-    
-    def render_template(self, template_id: str, variables: Dict[str, Any]) -> str:
-        """Render email template with variables"""
-        try:
-            template = self.template_env.get_template(template_id)
-            return template.render(**variables)
-        except jinja2.TemplateError as e:
-            logger.warning(f"Template {template_id} not found, using fallback: {e}")
-            return f"""
-            <html>
-            <body>
-                <h2>Notification</h2>
-                <p>{variables.get('message', 'You have a new notification from our service.')}</p>
-            </body>
-            </html>
-            """
-    
-    async def send_email(self, to_email: str, subject: str, template_id: str, variables: Dict[str, Any]) -> bool:
-        """Send email using SMTP - try SSL first, fallback to STARTTLS on port 587"""
-        try:
-            # Check if SMTP is configured
-            if not self.smtp_username or not self.smtp_password:
-                logger.warning("SMTP not configured - email would be sent to: %s", to_email)
-                logger.info("SUBJECT: %s", subject)
-                logger.info("TEMPLATE: %s", template_id)
-                logger.info("VARIABLES: %s", variables)
-                return True
 
-            logger.info("🔧 Attempting to send email via SMTP...")
-            logger.info(f"🔧 SMTP Config: {self.smtp_host}:{self.smtp_port}")
-            logger.info(f"🔧 Username: {self.smtp_username}")
-
-            # Create message
-            message = EmailMessage()
-            message["From"] = self.smtp_username
-            message["To"] = to_email
-            message["Subject"] = subject
-
-            # Render HTML content
-            html_content = self.render_template(template_id, variables)
-            message.set_content(html_content, subtype='html')
-
-            # Helper to cleanly quit smtp if created
-            smtp = None
+    # new: render template by id using Jinja2 (txt/html)
+    def render_template(self, template_id: str, variables: Optional[Dict[str, Any]] = None) -> (str, Optional[str]):
+        variables = variables or {}
+        text_out = None
+        html_out = None
+        # try templates loaded in the Jinja environment first
+        for ext in ("txt", "html"):
+            name = f"{template_id}.{ext}"
             try:
-                # Try SSL/TLS first (typical for port 465)
-                logger.info("🔧 Connecting using SSL/TLS...")
-                smtp = aiosmtplib.SMTP(hostname=self.smtp_host, port=self.smtp_port, use_tls=True)
-                await asyncio.wait_for(smtp.connect(), timeout=10)
-                logger.info("🔧 Connected (SSL), attempting login...")
-                await asyncio.wait_for(smtp.login(self.smtp_username, self.smtp_password), timeout=10)
-                logger.info("🔧 Login successful, sending message...")
-                await asyncio.wait_for(smtp.send_message(message), timeout=20)
-                logger.info("✅ Email sent successfully (SSL) to: %s", to_email)
-                return True
-            except Exception as ssl_err:
-                logger.warning("⚠️ SSL/TLS send failed: %s", ssl_err)
-                # Ensure any partial connection is closed
-                try:
-                    if smtp is not None:
-                        await smtp.quit()
-                except Exception:
-                    pass
+                tpl = self.template_env.get_template(name)
+                rendered = tpl.render(**variables)
+                if ext == "txt":
+                    text_out = rendered
+                else:
+                    html_out = rendered
+            except jinja2.TemplateNotFound:
+                continue
+        # fallback: look for templates on disk ...
+        if not text_out or not html_out:
+            tpl_dir = Path(__file__).resolve().parents[1] / "templates"
+            if tpl_dir.exists():
+                txt_path = tpl_dir / f"{template_id}.txt"
+                html_path = tpl_dir / f"{template_id}.html"
+                if txt_path.exists() and not text_out:
+                    text_out = jinja2.Template(txt_path.read_text()).render(**variables)
+                if html_path.exists() and not html_out:
+                    html_out = jinja2.Template(html_path.read_text()).render(**variables)
+        # debug log so you can see whether rendering produced content
+        logger.debug("render_template %s -> text=%d html=%d", template_id, len(text_out or ""), len(html_out or ""))
+        return (text_out or "", html_out)
 
-                # Try STARTTLS on port 587 as a fallback
-                try:
-                    logger.info("🔧 Attempting STARTTLS fallback on port 587...")
-                    smtp = aiosmtplib.SMTP(hostname=self.smtp_host, port=587, use_tls=False)
-                    await asyncio.wait_for(smtp.connect(), timeout=10)
-                    logger.info("🔧 Connected (no TLS), starting STARTTLS...")
-                    await asyncio.wait_for(smtp.starttls(), timeout=10)
-                    logger.info("🔧 STARTTLS established, attempting login...")
-                    await asyncio.wait_for(smtp.login(self.smtp_username, self.smtp_password), timeout=10)
-                    logger.info("🔧 Login successful, sending message (STARTTLS)...")
-                    await asyncio.wait_for(smtp.send_message(message), timeout=20)
-                    logger.info("✅ Email sent successfully (STARTTLS) to: %s", to_email)
-                    return True
-                except Exception as starttls_err:
-                    logger.error("❌ STARTTLS send failed: %s", starttls_err)
-                    try:
-                        if smtp is not None:
-                            await smtp.quit()
-                    except Exception:
-                        pass
-                    return False
-            finally:
-                try:
-                    if smtp is not None:
-                        await smtp.quit()
-                except Exception:
-                    pass
+    async def send_message(
+        self,
+        subject: str,
+        recipient: str,
+        body_text: str,
+        body_html: Optional[str] = None,
+        extra_headers: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        msg = EmailMessage()
+        msg["From"] = self.smtp_username or "no-reply@example.com"
+        msg["To"] = recipient
+        msg["Subject"] = subject
+        if extra_headers:
+            for k, v in extra_headers.items():
+                msg[k] = v
 
-        except asyncio.TimeoutError:
-            logger.error("❌ SMTP operation timed out")
-            return False
-        except Exception as e:
-            logger.error(f"❌ SMTP Error: {str(e)}")
-            logger.error(f"❌ Error type: {type(e).__name__}")
-            return False
+        # set content
+        if body_text:
+            msg.set_content(body_text)
+        if body_html:
+            msg.add_alternative(body_html, subtype="html")
+        # Guard: don't send completely empty email (use get_body for html)
+        plain = (body_text or "").strip()
+        html_alt = ""
+        html_part = msg.get_body(preferencelist=('html',))
+        if html_part is not None:
+            try:
+                html_alt = html_part.get_content().strip()
+            except Exception:
+                html_alt = ""
+        if not plain and not html_alt:
+            logger.error("Refusing to send empty email to %s (subject=%s)", recipient, subject)
+            raise ValueError("Empty email body")
+
+        # Check if SMTP is configured
+        if not self.smtp_username or not self.smtp_password:
+            logger.warning("SMTP not configured - email would be sent to: %s", recipient)
+            logger.info("SUBJECT: %s", subject)
+            logger.info("BODY TEXT: %s", body_text)
+            logger.info("BODY HTML: %s", body_html)
+            return
+
+        use_ssl = self.smtp_port == 465         # implicit TLS (SMTPS)
+        use_starttls = self.smtp_port == 587    # STARTTLS
+
+        # create SMTP client
+        smtp = aiosmtplib.SMTP(hostname=self.smtp_host, port=self.smtp_port, use_tls=use_ssl, timeout=30)
+
+        await smtp.connect()
+        if use_starttls:
+            # start TLS if required
+            await smtp.starttls()
+        if self.smtp_username and self.smtp_password:
+            await smtp.login(self.smtp_username, self.smtp_password)
+        await smtp.send_message(msg)
+        await smtp.quit()
+
+    # Add this adapter so existing callers using send_email keep working
+    async def send_email(
+        self,
+        *args,
+        **kwargs,
+    ) -> None:
+        """
+        Backwards-compatible adapter.
+        Supports: recipient_email / to / to_email / recipient_email,
+        Accepts template_id and variables to render body before sending.
+        """
+        # legacy recipient names
+        recipient = kwargs.pop("to_email", None) or kwargs.pop("to", None) or kwargs.pop("recipient", None) or kwargs.pop("recipient_email", None)
+        template_id = kwargs.pop("template_id", None)
+        variables = kwargs.pop("variables", None) or {}
+
+        # subject/body extraction (as before)
+        subject = kwargs.pop("subject", None)
+        body_text = kwargs.pop("body_text", None) or kwargs.pop("body", None)
+        body_html = kwargs.pop("body_html", None) or kwargs.pop("html", None)
+        extra_headers = kwargs.pop("extra_headers", None) or kwargs.pop("headers", None)
+
+        # positional args heuristic
+        if not recipient:
+            if len(args) >= 1 and "@" in str(args[0]):
+                recipient = args[0]
+        if not subject:
+            if len(args) >= 1 and recipient and args[0] != recipient:
+                subject = args[0]
+            elif len(args) >= 2 and recipient:
+                subject = args[1]
+        if not body_text:
+            if len(args) >= 2 and recipient and args[1] != subject:
+                body_text = args[1]
+            elif len(args) >= 3:
+                body_text = args[2]
+
+        if template_id:
+            try:
+                rendered_text, rendered_html = self.render_template(template_id, variables)
+                # prefer template outputs if present
+                if rendered_text and not body_text:
+                    body_text = rendered_text
+                if rendered_html and not body_html:
+                    body_html = rendered_html
+            except Exception as e:
+                logger.exception("Template render error for %s: %s", template_id, e)
+                # continue — send fallback body if any
+
+        if not recipient:
+            raise ValueError("recipient email not provided (to_email / to / recipient / recipient_email)")
+
+        subject = subject or "No subject"
+        body_text = body_text or ""
+
+        return await self.send_message(
+            subject=subject,
+            recipient=recipient,
+            body_text=body_text,
+            body_html=body_html,
+            extra_headers=extra_headers,
+        )
+
+    # synchronous helper to call from sync code
+    def send_message_sync(self, *args, **kwargs):
+        return asyncio.run(self.send_message(*args, **kwargs))
