@@ -28,7 +28,7 @@ export class UsersService {
     }
 
     // Create user with preferences
-    return this.prisma.user.create({
+    const user = await this.prisma.user.create({
       data: {
         email,
         password, // Note: In real implementation, hash this password
@@ -44,6 +44,21 @@ export class UsersService {
         preferences: true,
       },
     });
+
+    // Publish user created event
+    try {
+      await this.rabbitMQService.publish('user.created', {
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        preferences: user.preferences
+      });
+      console.log('✅ User created event published');
+    } catch (eventError) {
+      console.error('❌ Failed to publish user created event:', eventError);
+    }
+
+    return user;
   }
 
   async findAll(page: number = 1, limit: number = 10) {
@@ -108,13 +123,28 @@ export class UsersService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
-    await this.findOne(id); // Check if user exists
+    const oldUser = await this.findOne(id); // Check if user exists
 
     const user = await this.prisma.user.update({
       where: { id },
       data: updateUserDto,
       include: { preferences: true },
     });
+
+    // Publish user updated event
+    try {
+      await this.rabbitMQService.publish('user.updated', {
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        changes: Object.keys(updateUserDto),
+        oldData: { email: (oldUser as any).email, name: (oldUser as any).name },
+        newData: { email: user.email, name: user.name }
+      });
+      console.log('✅ User updated event published');
+    } catch (eventError) {
+      console.error('❌ Failed to publish user updated event:', eventError);
+    }
 
     // Clear cache
     await this.cacheManager.del(`user:${id}`);
@@ -123,12 +153,24 @@ export class UsersService {
   }
 
   async remove(id: string) {
-    await this.findOne(id); // Check if user exists
+    const user = await this.findOne(id); // Check if user exists
 
     await this.prisma.user.update({
       where: { id },
       data: { isActive: false },
     });
+
+    // Publish user deleted event
+    try {
+      await this.rabbitMQService.publish('user.deleted', {
+        userId: id,
+        email: (user as any).email,
+        name: (user as any).name
+      });
+      console.log('✅ User deleted event published');
+    } catch (eventError) {
+      console.error('❌ Failed to publish user deleted event:', eventError);
+    }
 
     // Clear cache
     await this.cacheManager.del(`user:${id}`);
@@ -232,7 +274,7 @@ export class UsersService {
   async addDeviceToken(userId: string, token: string, platform: string) {
     await this.findOne(userId); // Check if user exists
 
- if (!token || !platform) {
+    if (!token || !platform) {
       throw new BadRequestException('Token and platform are required');
     }
 
@@ -254,7 +296,7 @@ export class UsersService {
       },
     });
 
-     // Publish device token added event
+    // Publish device token added event
     try {
       await this.rabbitMQService.publish('user.device-token.added', {
         userId,
@@ -280,7 +322,7 @@ export class UsersService {
       },
     });
 
-     try {
+    try {
       await this.rabbitMQService.publish('user.device-token.removed', {
         userId,
         deviceToken: token
@@ -292,7 +334,7 @@ export class UsersService {
   }
 
 
-  
+
 
   async getActiveDeviceTokens(userId: string) {
     return this.prisma.deviceToken.findMany({
