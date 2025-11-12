@@ -17,6 +17,7 @@ type Config struct {
 	UserServiceURL     string
 	TemplateServiceURL string
 	UserPrefCacheTTL   time.Duration
+	LogLevel           string
 }
 
 // Load loads the configuration from environment variables.
@@ -34,6 +35,7 @@ func Load() (*Config, error) {
 		UserServiceURL:     getEnv("USER_SERVICE_URL", ""),
 		TemplateServiceURL: getEnv("TEMPLATE_SERVICE_URL", ""),
 		UserPrefCacheTTL:   getEnvAsDuration("USER_PREF_CACHE_TTL", 5*time.Minute),
+		LogLevel:           getEnv("LOG_LEVEL", "info"),
 	}, nil
 }
 
