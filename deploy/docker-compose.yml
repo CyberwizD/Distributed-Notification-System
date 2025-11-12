@@ -41,6 +41,43 @@ services:
     networks:
       - notif_network
 
+  user_service:
+    build:
+      context: ../services/user_service
+    container_name: user_service
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgresql://notif_user:notif_pass@postgres_db:5432/notification_system
+      REDIS_URL: redis://redis_cache:6379/0
+      RABBITMQ_URL: amqp://admin:admin123@rabbitmq_broker:5672/
+      JWT_SECRET: super-secret-key
+      JWT_EXPIRES_IN: 1d
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-gateway-internal-key}
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    networks:
+      - notif_network
+    ports:
+      - "3001:3001"
+
+  template_service:
+    build:
+      context: ../services/template_service
+    container_name: template_service
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://notif_user:notif_pass@postgres_db:5432/notification_system
+      REDIS_URL: redis://redis_cache:6379/0
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - notif_network
+    ports:
+      - "3000:3000"
+
   api_gateway:
     build:
       context: ../services/api_gateway
@@ -51,15 +88,40 @@ services:
       DATABASE_URL: postgres://notif_user:notif_pass@postgres_db:5432/notification_system
       REDIS_URL: redis_cache:6379
       RABBITMQ_URL: amqp://admin:admin123@rabbitmq_broker:5672/
-      USER_SERVICE_URL: http://user_service:9000
-      TEMPLATE_SERVICE_URL: http://template_service:9100
+      USER_SERVICE_URL: http://user_service:3001/api
+      USER_SERVICE_INTERNAL_API_KEY: ${INTERNAL_API_KEY:-gateway-internal-key}
+      TEMPLATE_SERVICE_URL: http://template_service:3000/api
       USER_PREF_CACHE_TTL: 5m
+      LOG_LEVEL: info
     ports:
       - "8080:8080"
     depends_on:
       - postgres
       - redis
       - rabbitmq
+      - user_service
+      - template_service
+    networks:
+      - notif_network
+
+  email_service:
+    build:
+      context: ../services/email_service
+    container_name: email_service
+    environment:
+      RABBITMQ_URL: amqp://admin:admin123@rabbitmq_broker:5672/
+      EMAIL_QUEUE: email.queue
+      SERVICE_NAME: email-service
+      TEMPLATE_SERVICE_URL: http://template_service:3000/api
+      STATUS_DATABASE_URL: postgresql://notif_user:notif_pass@postgres_db:5432/notification_system
+      STATUS_TABLE: notification_statuses
+      EMAIL_PROVIDER_NAME: email
+    ports:
+      - "2525:2525"
+    depends_on:
+      - rabbitmq
+      - template_service
+      - postgres
     networks:
       - notif_network
 
@@ -73,7 +135,7 @@ services:
       DATABASE_URL: postgres://notif_user:notif_pass@postgres_db:5432/notification_system
       REDIS_URL: redis_cache:6379
       RABBITMQ_URL: amqp://admin:admin123@rabbitmq_broker:5672/
-      TEMPLATE_SERVICE_URL: http://template_service:9100
+      TEMPLATE_SERVICE_URL: http://template_service:3000/api
       STATUS_TABLE: notification_statuses
       FCM_SERVER_KEY: ${FCM_SERVER_KEY:-demo-key}
       FCM_ENDPOINT: https://fcm.googleapis.com/fcm/send
@@ -85,6 +147,7 @@ services:
       - postgres
       - redis
       - rabbitmq
+      - template_service
     networks:
       - notif_network
 
