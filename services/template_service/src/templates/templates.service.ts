@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   // BadRequestException,
@@ -30,6 +31,23 @@ export class TemplatesService {
 
   private async _getTemplateById(id: string): Promise<Template> {
     const template = await this.prisma.template.findUnique({ where: { id } });
+    if (!template) {
+      throw new NotFoundException('Template not found');
+    }
+    return template;
+  }
+
+  private async _getTemplateByIdentifier(
+    identifier: string,
+    locale?: string,
+  ): Promise<Template> {
+    const where: any = {
+      OR: [{ id: identifier }, { name: identifier }],
+    };
+    if (locale) {
+      where.language = locale;
+    }
+    const template = await this.prisma.template.findFirst({ where });
     if (!template) {
       throw new NotFoundException('Template not found');
     }
@@ -253,10 +271,15 @@ export class TemplatesService {
   }
 
   async getActiveVersion(
-    templateId: string,
+    templateIdentifier: string,
+    locale?: string,
   ): Promise<ResponseWrapperDto<TemplateVersion | null>> {
     try {
-      const version = await this._getActiveVersion(templateId);
+      const template = await this._getTemplateByIdentifier(
+        templateIdentifier,
+        locale,
+      );
+      const version = await this._getActiveVersion(template.id);
       return new ResponseWrapperDto({
         success: true,
         message: 'Active template version retrieved successfully',
@@ -276,8 +299,15 @@ export class TemplatesService {
     dto: RenderTemplateDto,
   ): Promise<ResponseWrapperDto<{ subject: string; body: string } | null>> {
     try {
-      const { template_id, variables } = dto;
-      const version = await this._getActiveVersion(template_id);
+      const identifier = dto.template_id ?? dto.template_code;
+      if (!identifier) {
+        throw new BadRequestException(
+          'template_id or template_code is required',
+        );
+      }
+      const { variables } = dto;
+      const template = await this._getTemplateByIdentifier(identifier);
+      const version = await this._getActiveVersion(template.id);
 
       const rendered = {
         subject: this.substitutionService.render(version.subject, variables),

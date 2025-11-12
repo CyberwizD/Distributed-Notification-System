@@ -13,6 +13,7 @@ import (
 type StatusStore interface {
 	GetStatus(requestID string) (string, error)
 	SetStatus(requestID, status string) error
+	SetStatusWithProvider(requestID, status, provider, detail string) error
 }
 
 // NotificationHandler handles notification-related requests.
@@ -45,44 +46,59 @@ func NewNotificationHandler(
 func (h *NotificationHandler) SendNotification(c *gin.Context) {
 	var req models.SendRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondValidationError(c, err)
+		return
+	}
+	if err := req.Normalize(); err != nil {
+		respondValidationError(c, err)
 		return
 	}
 
 	// Check for idempotency
 	if isDuplicate, err := h.idempotencyService.IsDuplicate(req.RequestID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check idempotency"})
+		respondError(c, http.StatusInternalServerError, "failed to check idempotency", err)
 		return
 	} else if isDuplicate {
 		// If it's a duplicate, return the previous status
 		status, err := h.statusStore.GetStatus(req.RequestID)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get status for duplicate request"})
+			respondError(c, http.StatusInternalServerError, "failed to get status for duplicate request", err)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": status})
+		respondSuccess(c, http.StatusOK, "duplicate request", gin.H{
+			"request_id": req.RequestID,
+			"status":     status,
+		})
 		return
 	}
 
 	// Get user preferences
 	prefs, err := h.userClient.GetPreferences(req.UserID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get user preferences"})
+		respondError(c, http.StatusInternalServerError, "failed to get user preferences", err)
 		return
 	}
 
 	// Check if the user has opted out of this notification channel
 	if (req.Channel == "email" && !prefs.AllowEmail) || (req.Channel == "push" && !prefs.AllowPush) {
-		c.JSON(http.StatusOK, gin.H{"status": "skipped", "message": "user has opted out of this channel"})
+		_ = h.statusStore.SetStatusWithProvider(req.RequestID, "skipped", "", "user opted out")
+		respondSuccess(c, http.StatusOK, "user has opted out of this channel", gin.H{
+			"request_id": req.RequestID,
+			"status":     "skipped",
+		})
 		return
 	}
 
 	// Get template
 	tpl, err := h.templateClient.GetTemplate(req.TemplateSlug, prefs.Locale)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get template"})
+		respondError(c, http.StatusInternalServerError, "failed to get template", err)
 		return
 	}
+
+	template := *tpl
+	template.Slug = req.TemplateSlug
+	template.Locale = prefs.Locale
 
 	// Create message envelope
 	envelope := models.MessageEnvelope{
@@ -96,11 +112,7 @@ func (h *NotificationHandler) SendNotification(c *gin.Context) {
 			Locale:     prefs.Locale,
 			PushTokens: prefs.PushTokens,
 		},
-		Template: models.Template{
-			Slug:    req.TemplateSlug,
-			Locale:  prefs.Locale,
-			Version: tpl.Version,
-		},
+		Template:          template,
 		Variables:         req.Variables,
 		ProviderOverrides: req.Metadata,
 		RetryCount:        0,
@@ -108,15 +120,18 @@ func (h *NotificationHandler) SendNotification(c *gin.Context) {
 
 	// Publish message to RabbitMQ
 	if err := h.publisher.Publish(&envelope); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to publish message"})
+		respondError(c, http.StatusInternalServerError, "failed to publish message", err)
 		return
 	}
 
 	// Store initial status
 	if err := h.statusStore.SetStatus(req.RequestID, "queued"); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set initial status"})
+		respondError(c, http.StatusInternalServerError, "failed to set initial status", err)
 		return
 	}
 
-	c.JSON(http.StatusAccepted, gin.H{"status": "queued"})
+	respondSuccess(c, http.StatusAccepted, "notification queued", gin.H{
+		"request_id": req.RequestID,
+		"status":     "queued",
+	})
 }

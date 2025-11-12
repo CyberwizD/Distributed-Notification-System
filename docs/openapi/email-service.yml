@@ -1,0 +1,63 @@
+openapi: 3.0.3
+info:
+  title: Email Service API
+  version: "1.0.0"
+servers:
+  - url: http://localhost:2525
+paths:
+  /send-email:
+    post:
+      summary: Synchronously enqueue a single email (testing)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailRequest'
+      responses:
+        '200':
+          description: Accepted for delivery
+  /send-batch-emails:
+    post:
+      summary: Batch enqueue emails
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [emails]
+              properties:
+                emails:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/EmailRequest'
+      responses:
+        '200':
+          description: Batch processed
+  /:
+    get:
+      summary: Health/root endpoint
+      responses:
+        '200':
+          description: Service running
+components:
+  schemas:
+    EmailRequest:
+      type: object
+      required:
+        - recipient_email
+        - subject
+        - template_id
+        - variables
+      properties:
+        recipient_email:
+          type: string
+          format: email
+        subject:
+          type: string
+        template_id:
+          type: string
+        variables:
+          type: object
+          additionalProperties: true

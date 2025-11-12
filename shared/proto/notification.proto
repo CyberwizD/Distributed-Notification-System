@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package notification;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+message PushToken {
+  string token = 1;
+  string platform = 2;
+  string provider = 3;
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  string locale = 3;
+  repeated PushToken push_tokens = 4;
+}
+
+message Template {
+  string slug = 1;
+  string locale = 2;
+  int32 version = 3;
+  string subject = 4;
+  string body = 5;
+}
+
+message MessageEnvelope {
+  string request_id = 1;
+  string correlation_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+  string channel = 4;
+  User user = 5;
+  Template template = 6;
+  google.protobuf.Struct variables = 7;
+  google.protobuf.Struct provider_overrides = 8;
+  int32 retry_count = 9;
+}

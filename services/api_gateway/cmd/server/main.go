@@ -75,7 +75,7 @@ func main() {
 
 	// Initialize services
 	idempotencyService := services.NewIdempotencyService(redisRepo)
-	userClient := services.NewUserClient(cfg.UserServiceURL, redisRepo, cfg.UserPrefCacheTTL)
+	userClient := services.NewUserClient(cfg.UserServiceURL, cfg.UserServiceAPIKey, redisRepo, cfg.UserPrefCacheTTL)
 	publisher := services.NewPublisher(amqpConn)
 	templateClient := services.NewTemplateClient(cfg.TemplateServiceURL)
 

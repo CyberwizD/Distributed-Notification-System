@@ -1,6 +1,14 @@
-import { IsString, IsObject } from 'class-validator';
+import { IsString, IsObject, IsOptional } from 'class-validator';
 
 export class RenderTemplateDto {
-  @IsString() template_id: string;
-  @IsObject() variables: Record<string, any>;
+  @IsString()
+  @IsOptional()
+  template_id?: string;
+
+  @IsString()
+  @IsOptional()
+  template_code?: string;
+
+  @IsObject()
+  variables: Record<string, any>;
 }

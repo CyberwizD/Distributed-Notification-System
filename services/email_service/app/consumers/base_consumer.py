@@ -1,163 +1,116 @@
-import time
-import logging
-import pika
-from urllib.parse import urlparse
+import asyncio
 import json
-import os
+import logging
+import time
+from typing import Any, Dict
+
+import jinja2
+import pika
+from pika.adapters.blocking_connection import BlockingChannel
+
+from app.clients.template_client import TemplateClient
 from app.config.settings import settings
 from app.email_sender import EmailSender
+from app.services.status_store import StatusStore
+
+logger = logging.getLogger(__name__)
+
 
 class BaseConsumer:
-    def __init__(self):
-        self.connection = None
-        self.channel = None
-        self.logger = logging.getLogger(__name__)
-    
-    def connect(self):
-        """Establish connection to RabbitMQ with DLQ settings"""
+    def __init__(self) -> None:
+        self.connection: pika.BlockingConnection | None = None
+        self.channel: BlockingChannel | None = None
+
+    def connect(self) -> bool:
         try:
-            self.connection = pika.BlockingConnection(
-                pika.URLParameters(settings.rabbitmq_url)
-            )
+            self.connection = pika.BlockingConnection(pika.URLParameters(settings.rabbitmq_url))
             self.channel = self.connection.channel()
-            
-            # Declare main queue with DLX settings
             self.channel.queue_declare(
                 queue=settings.email_queue,
                 durable=True,
                 arguments={
-                    'x-dead-letter-exchange': '',
-                    'x-dead-letter-routing-key': settings.failed_queue
-                }
+                    "x-dead-letter-exchange": "",
+                    "x-dead-letter-routing-key": settings.failed_queue,
+                },
             )
-            
-            # Declare failed queue (DLQ)
-            self.channel.queue_declare(
-                queue=settings.failed_queue,
-                durable=True
-            )
-            
-            self.logger.info("✅ Connected to RabbitMQ with DLQ setup")
+            self.channel.queue_declare(queue=settings.failed_queue, durable=True)
             return True
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to connect to RabbitMQ: {e}")
+        except Exception as exc:
+            logger.error("Failed to connect to RabbitMQ: %s", exc)
             return False
-    
-    def start_consuming(self):
-        """Start consuming messages - to be implemented by subclasses"""
-        if not self.connect():
-            return False
-        
-        try:
-            self.channel.basic_qos(prefetch_count=1)
-            self.channel.basic_consume(
-                queue=settings.email_queue,
-                on_message_callback=self.process_message
-            )
-            
-            self.logger.info(f"🔄 Starting consumer for {settings.email_queue}")
-            self.channel.start_consuming()
-            
-        except Exception as e:
-            self.logger.error(f"❌ Consumer error: {e}")
-            return False
-    
-    def process_message(self, ch, method, properties, body):
-        """Process message - to be overridden by subclasses"""
-        try:
-            message = json.loads(body)
-            self.logger.info(f"📨 Received message: {message}")
-            
-            # Acknowledge message (subclasses will implement actual processing)
-            ch.basic_ack(delivery_tag=method.delivery_tag)
-            
-        except Exception as e:
-            self.logger.error(f"❌ Message processing error: {e}")
-            # Reject and send to DLQ
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-    
-    def stop_consuming(self):
-        """Stop consuming messages"""
+
+    def stop(self) -> None:
         if self.connection and not self.connection.is_closed:
             self.connection.close()
-            self.logger.info("🛑 Consumer stopped")
-            
-            
 
 
 class EmailConsumer(BaseConsumer):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.email_sender = EmailSender()
+        self.template_client = TemplateClient()
+        self.status_store = StatusStore()
+        self._jinja_env = jinja2.Environment(autoescape=True)
 
-    def start_consuming(self):
-        max_retries = 10
-        delay = 1.0
-        for attempt in range(1, max_retries + 1):
-            try:
-                # reuse BaseConsumer.connect() which sets up the queues / DLQ
-                if self.connect():
-                    self.logger.info("✅ Connected to RabbitMQ")
-                    break
-            except Exception as exc:
-                self.logger.warning("RabbitMQ connect attempt %d/%d failed: %s", attempt, max_retries, exc)
-
-            if attempt == max_retries:
-                self.logger.error("❌ Failed to connect to RabbitMQ after %d attempts", max_retries)
-                return False
-
-            time.sleep(delay)
-            delay = min(delay * 2, 10)
-
+    def _render(self, template: str, variables: Dict[str, Any]) -> str:
         try:
-            # Start consuming messages
-            self.channel.basic_qos(prefetch_count=1)
-            self.channel.basic_consume(
-                queue=settings.email_queue,
-                on_message_callback=self.process_message
-            )
-            self.logger.info(f"🔄 Starting consumer for {settings.email_queue}")
-            self.channel.start_consuming()
-        except Exception as e:
-            self.logger.error(f"❌ Consumer error: {e}")
+            return self._jinja_env.from_string(template).render(**variables)
+        except Exception as exc:
+            logger.warning("Template rendering failed (%s); returning raw template", exc)
+            return template
+
+    def start_consuming(self) -> bool:
+        backoff = 1.0
+        for attempt in range(1, 6):
+            if self.connect():
+                break
+            logger.warning("RabbitMQ connection attempt %d failed", attempt)
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 10.0)
+        else:
             return False
-    
-    def process_message(self, ch, method, properties, body):
-        """Process email messages and send actual emails"""
+
+        assert self.channel is not None
+        self.channel.basic_qos(prefetch_count=1)
+        self.channel.basic_consume(
+            queue=settings.email_queue,
+            on_message_callback=self.process_message,
+        )
+        logger.info("Email consumer started on queue %s", settings.email_queue)
+        self.channel.start_consuming()
+        return True
+
+    def process_message(self, ch: BlockingChannel, method, properties, body: bytes) -> None:
         try:
-            message_data = json.loads(body)
-            self.logger.info(f"📧 Processing email message: {message_data}")
-            
-            # Extract email data
-            recipient_email = message_data.get('recipient_email')
-            template_id = message_data.get('template_id', 'welcome')
-            subject = message_data.get('subject', 'Notification from Our Service')
-            variables = message_data.get('variables', {})
-            
+            envelope = json.loads(body)
+            logger.debug("Processing envelope: %s", envelope)
+            request_id = envelope.get("request_id")
+            user = envelope.get("user") or {}
+            template_info = envelope.get("template") or {}
+            variables = envelope.get("variables") or {}
+
+            recipient_email = user.get("email")
             if not recipient_email:
-                self.logger.error("❌ No recipient email provided")
+                self.status_store.update_status(request_id, "failed", settings.provider_name, "missing email")
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
                 return
-            
-            # Send actual email
-            import asyncio
+
+            slug = template_info.get("slug")
+            locale = user.get("locale") or template_info.get("locale")
+            template = self.template_client.get_active_template(slug, locale)
+            rendered_subject = self._render(template["subject"], variables)
+            rendered_body = self._render(template["body"], variables)
+
             success = asyncio.run(
-                self.email_sender.send_email(
-                    to_email=recipient_email,
-                    subject=subject,
-                    template_id=template_id,
-                    variables=variables
-                )
+                self.email_sender.send_raw_email(recipient_email, rendered_subject, rendered_body)
             )
-            
+
             if success:
-                self.logger.info(f"✅ Email sent successfully to {recipient_email}")
+                self.status_store.update_status(request_id, "delivered", settings.provider_name, None)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
             else:
-                self.logger.error(f"❌ Failed to send email to {recipient_email}")
+                self.status_store.update_status(request_id, "failed", settings.provider_name, "smtp failure")
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-                
-        except Exception as e:
-            self.logger.error(f"❌ Email processing failed: {e}")
+        except Exception as exc:
+            logger.error("Email processing failed: %s", exc)
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)

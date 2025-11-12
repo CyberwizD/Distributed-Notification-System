@@ -21,15 +21,18 @@ func NewStatusHandler(statusStore *repository.StatusStore) *StatusHandler {
 func (h *StatusHandler) GetStatus(c *gin.Context) {
 	requestID := c.Param("request_id")
 	if requestID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "request_id is required"})
+		respondError(c, http.StatusBadRequest, "request_id is required", nil)
 		return
 	}
 
 	status, err := h.statusStore.GetStatus(requestID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
+		respondError(c, http.StatusNotFound, "notification not found", err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"request_id": requestID, "status": status})
+	respondSuccess(c, http.StatusOK, "notification status retrieved", gin.H{
+		"request_id": requestID,
+		"status":     status,
+	})
 }

@@ -32,7 +32,7 @@ type Template struct {
 	Slug    string `json:"slug"`
 	Locale  string `json:"locale"`
 	Version int    `json:"version"`
-	Title   string `json:"title,omitempty"`
+	Subject string `json:"subject,omitempty"`
 	Body    string `json:"body,omitempty"`
 }
 
