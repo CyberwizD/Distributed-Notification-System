@@ -7,17 +7,16 @@ import logging
 import asyncio
 from email.message import EmailMessage
 from dotenv import load_dotenv, find_dotenv
+from app.config.settings import SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD
 
 logger = logging.getLogger(__name__)
 
 class EmailSender:
     def __init__(self):
-        load_dotenv(find_dotenv())
-        # Gmail SMTP settings
-        self.smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-        self.smtp_port = int(os.getenv("SMTP_PORT") or "465")
-        self.smtp_username = os.getenv("SMTP_USERNAME")
-        self.smtp_password = os.getenv("SMTP_PASSWORD")
+        self.smtp_host = SMTP_HOST
+        self.smtp_port = SMTP_PORT
+        self.smtp_username = SMTP_USERNAME
+        self.smtp_password = SMTP_PASSWORD
         
         # Initialize templates
         self.template_env = jinja2.Environment(
