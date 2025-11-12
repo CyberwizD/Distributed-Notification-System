@@ -48,14 +48,14 @@ func (c *Collector) Handler() http.Handler {
 		}
 
 		payload := map[string]interface{}{
-			"requests_total":       reqs,
-			"requests_failed":      c.failedRequests.Load(),
-			"avg_latency_micros":   avgMicros,
-			"uptime_seconds":       int64(time.Since(c.startedAt).Seconds()),
-			"timestamp":            time.Now().UTC(),
-			"success":              true,
-			"message":              "api-gateway metrics snapshot",
-			"meta":                 map[string]interface{}{},
+			"requests_total":     reqs,
+			"requests_failed":    c.failedRequests.Load(),
+			"avg_latency_micros": avgMicros,
+			"uptime_seconds":     int64(time.Since(c.startedAt).Seconds()),
+			"timestamp":          time.Now().UTC(),
+			"success":            true,
+			"message":            "api-gateway metrics snapshot",
+			"meta":               map[string]interface{}{},
 		}
 
 		w.Header().Set("Content-Type", "application/json")
