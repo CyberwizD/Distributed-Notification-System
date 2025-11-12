@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     # Service Settings
     service_name: str = os.getenv("SERVICE_NAME", "email-service")
     service_port: int = 2525
+    template_service_url: str = os.getenv("TEMPLATE_SERVICE_URL", "http://template_service:3000/api")
+    status_database_url: str = os.getenv(
+        "STATUS_DATABASE_URL",
+        "postgresql://notif_user:notif_pass@postgres_db:5432/notification_system?sslmode=disable",
+    )
+    status_table: str = os.getenv("STATUS_TABLE", "notification_statuses")
+    provider_name: str = os.getenv("EMAIL_PROVIDER_NAME", "email")
     
     # SMTP Settings (for future use)
     smtp_host: Optional[str] = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -42,3 +49,8 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
+
+SMTP_HOST = settings.smtp_host
+SMTP_PORT = settings.smtp_port
+SMTP_USERNAME = settings.smtp_username
+SMTP_PASSWORD = settings.smtp_password
