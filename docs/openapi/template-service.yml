@@ -1,0 +1,88 @@
+openapi: 3.0.3
+info:
+  title: Template Service API
+  version: "1.0.0"
+servers:
+  - url: http://localhost:3000/api/v1
+paths:
+  /templates:
+    get:
+      summary: List templates
+      responses:
+        '200':
+          description: Array of templates
+    post:
+      summary: Create template with initial versions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateInput'
+      responses:
+        '201':
+          description: Created
+  /templates/{id}/active:
+    get:
+      summary: Fetch active version by slug or id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: locale
+          in: query
+          schema:
+            type: string
+            default: en
+      responses:
+        '200':
+          description: Active version
+  /templates/render:
+    post:
+      summary: Render template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [variables]
+              properties:
+                template_id:
+                  type: string
+                template_code:
+                  type: string
+                variables:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Rendered subject/body
+components:
+  schemas:
+    TemplateInput:
+      type: object
+      required: [name, type, language, versions]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [email, push]
+        language:
+          type: string
+          default: en
+        versions:
+          type: array
+          items:
+            type: object
+            required: [subject, body]
+            properties:
+              subject:
+                type: string
+              body:
+                type: string
+              is_active:
+                type: boolean

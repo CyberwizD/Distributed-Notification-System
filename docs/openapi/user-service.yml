@@ -1,0 +1,138 @@
+openapi: 3.0.3
+info:
+  title: User Service API
+  version: "1.0.0"
+servers:
+  - url: http://localhost:3001/api/v1
+paths:
+  /auth/login:
+    post:
+      summary: Authenticate user and issue JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Token issued
+  /users:
+    post:
+      summary: Create user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserInput'
+      responses:
+        '201':
+          description: Created
+    get:
+      summary: List users
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Paginated users
+  /users/{id}/preferences:
+    get:
+      summary: Get user preferences
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Preference payload
+    patch:
+      summary: Update preferences
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreferenceInput'
+      responses:
+        '200':
+          description: Updated
+  /internal/users/{id}/notification-profile:
+    get:
+      summary: Internal notification profile (gateway only)
+      security:
+        - internalKey: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Contact info + tokens
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    internalKey:
+      type: apiKey
+      in: header
+      name: X-Internal-API-Key
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    UserInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        name:
+          type: string
+        emailEnabled:
+          type: boolean
+        pushEnabled:
+          type: boolean
+    PreferenceInput:
+      type: object
+      properties:
+        emailEnabled:
+          type: boolean
+        pushEnabled:
+          type: boolean
+        smsEnabled:
+          type: boolean
+        language:
+          type: string
