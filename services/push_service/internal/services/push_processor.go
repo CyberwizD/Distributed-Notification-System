@@ -67,7 +67,11 @@ func (p *PushProcessor) Process(ctx context.Context, envelope *models.MessageEnv
 		return err
 	}
 
-	title := RenderTemplate(tpl.Title, envelope.Variables)
+	titleTemplate := tpl.Subject
+	if titleTemplate == "" {
+		titleTemplate = tpl.Slug
+	}
+	title := RenderTemplate(titleTemplate, envelope.Variables)
 	body := RenderTemplate(tpl.Body, envelope.Variables)
 
 	payload := &PushPayload{
