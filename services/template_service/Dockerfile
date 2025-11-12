@@ -4,10 +4,11 @@ WORKDIR /builder
 
 COPY package*.json ./
 RUN npm set progress=false \
+    && npm config set fund false \
+    && npm config set update-notifier false \
     && npm config set fetch-retry-maxtimeout 120000 \
     && npm config set fetch-retry-mintimeout 20000 \
-    && npm config set registry https://registry.npmjs.org/ \
-    && npm ci --prefer-offline --no-audit
+    && (npm ci --prefer-offline --no-audit --no-fund || npm ci --no-audit --no-fund)
 
 COPY . .
 RUN npm run build
