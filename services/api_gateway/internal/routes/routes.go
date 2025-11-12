@@ -17,6 +17,8 @@ func SetupRoutes(
 	statusHandler *handlers.StatusHandler,
 	redisClient *redis.Client,
 ) {
+	router.Use(middleware.CorrelationIDMiddleware())
+
 	// Initialize circuit breaker
 	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{})
 
