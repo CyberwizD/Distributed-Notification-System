@@ -3,7 +3,11 @@ FROM node:20-alpine AS builder
 WORKDIR /builder
 
 COPY package*.json ./
-RUN npm ci
+RUN npm set progress=false \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm config set fetch-retry-mintimeout 20000 \
+    && npm config set registry https://registry.npmjs.org/ \
+    && npm ci --prefer-offline --no-audit
 
 COPY . .
 RUN npm run build

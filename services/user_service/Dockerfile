@@ -3,7 +3,12 @@ FROM node:20-alpine AS builder
 WORKDIR /builder
 
 COPY package*.json ./
-RUN npm ci
+RUN npm set progress=false \
+    && npm config set fund false \
+    && npm config set update-notifier false \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm config set fetch-retry-mintimeout 20000 \
+    && (npm ci --prefer-offline --no-audit --no-fund || npm ci --no-audit --no-fund)
 
 COPY . .
 RUN npm run build
