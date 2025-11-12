@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -16,9 +18,9 @@ services:
   redis:
     image: redis:7-alpine
     container_name: redis_cache
+    command: redis-server --appendonly yes
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
     networks:
@@ -35,21 +37,50 @@ services:
       - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+      - ./scripts/init-rabbitmq.sh:/docker-entrypoint-init.d/10-init.sh
     networks:
       - notif_network
-  
-  notif_api:
+
+  api_gateway:
     build:
-      context: ../
+      context: ../services/api_gateway
       dockerfile: Dockerfile
-    container_name: notif_api_service
+    container_name: api_gateway_service
     environment:
+      PORT: 8080
       DATABASE_URL: postgres://notif_user:notif_pass@postgres_db:5432/notification_system
-      REDIS_URL: redis://redis_cache:6379/0
+      REDIS_URL: redis_cache:6379
       RABBITMQ_URL: amqp://admin:admin123@rabbitmq_broker:5672/
-      FLASK_ENV: development
+      USER_SERVICE_URL: http://user_service:9000
+      TEMPLATE_SERVICE_URL: http://template_service:9100
+      USER_PREF_CACHE_TTL: 5m
     ports:
       - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    networks:
+      - notif_network
+
+  push_service:
+    build:
+      context: ../services/push_service
+      dockerfile: Dockerfile
+    container_name: push_service
+    environment:
+      HTTP_PORT: 8081
+      DATABASE_URL: postgres://notif_user:notif_pass@postgres_db:5432/notification_system
+      REDIS_URL: redis_cache:6379
+      RABBITMQ_URL: amqp://admin:admin123@rabbitmq_broker:5672/
+      TEMPLATE_SERVICE_URL: http://template_service:9100
+      STATUS_TABLE: notification_statuses
+      FCM_SERVER_KEY: ${FCM_SERVER_KEY:-demo-key}
+      FCM_ENDPOINT: https://fcm.googleapis.com/fcm/send
+      PROVIDER_TIMEOUT: 10s
+      RETRY_MAX_ATTEMPTS: 4
+    ports:
+      - "8081:8081"
     depends_on:
       - postgres
       - redis
