@@ -10,6 +10,7 @@ import {
   UseGuards,
   ParseIntPipe,
   DefaultValuePipe,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -19,13 +20,14 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdatePreferenceDto } from './dto/update-preference.dto';
 import { AddDeviceTokenDto, RemoveDeviceTokenDto } from './dto/device-token.dto';
 import { ResponseWrapper } from '../common/dto/response-wrapper.dto';
+import { InternalApiGuard } from '../common/guards/internal-api.guard';
 
 @ApiTags('Users')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) { }
 
   @Post()
   @ApiOperation({ summary: 'Create a new user' })
@@ -142,5 +144,87 @@ export class UsersController {
   async getDeviceTokens(@Param('id') id: string) {
     const tokens = await this.usersService.getActiveDeviceTokens(id);
     return ResponseWrapper.success('Device tokens retrieved successfully', tokens);
+  }
+
+
+  // ==================== INTERNAL ENDPOINTS ====================
+  // These are for service-to-service communication
+  @UseGuards(InternalApiGuard)
+  @Get('internal/:id/validate')
+  @ApiOperation({ summary: 'Validate user exists and is active (internal use)' })
+  async validateUser(@Param('id') id: string) {
+    try {
+      const user = await this.usersService.findOne(id);
+      return ResponseWrapper.success('User validated', {
+        valid: true,
+        userId: (user as any).id,
+        email: (user as any).email,
+        name: (user as any).name,
+        isActive: (user as any).isActive,
+        preferences: (user as any).preferences
+      });
+    } catch (error) {
+      return ResponseWrapper.success('User validation failed', {
+        valid: false,
+        userId: id
+      });
+    }
+  }
+
+  @UseGuards(InternalApiGuard)
+  @Get('internal/:id/notification-preferences')
+  @ApiOperation({ summary: 'Get user notification preferences (internal use)' })
+  async getNotificationPreferences(@Param('id') id: string) {
+    try {
+      const preferences = await this.usersService.getPreferences(id);
+      const canReceiveEmail = await this.usersService.canReceiveEmail(id);
+      const canReceivePush = await this.usersService.canReceivePush(id);
+
+      return ResponseWrapper.success('Preferences retrieved', {
+        userId: id,
+        emailEnabled: canReceiveEmail,
+        pushEnabled: canReceivePush,
+        preferences
+      });
+    } catch (error) {
+      throw new NotFoundException('User not found');
+    }
+  }
+
+  @UseGuards(InternalApiGuard)
+  @Get('internal/:id/contact-info')
+  @ApiOperation({ summary: 'Get user contact info for notifications (internal use)' })
+  async getContactInfoInternal(@Param('id') id: string) {
+    try {
+      const contactInfo = await this.usersService.getUserContactInfo(id);
+      return ResponseWrapper.success('Contact info retrieved', {
+        userId: id,
+        ...contactInfo
+      });
+    } catch (error) {
+      throw new NotFoundException('User not found');
+    }
+  }
+
+  @UseGuards(InternalApiGuard)
+  @Get('internal/email/:email')
+  @ApiOperation({ summary: 'Get user by email (internal use)' })
+  async getUserByEmail(@Param('email') email: string) {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return ResponseWrapper.success('User found', user);
+  }
+
+  @UseGuards(InternalApiGuard)
+  @Get('internal/:id/device-tokens')
+  @ApiOperation({ summary: 'Get active device tokens for user (internal use)' })
+  async getDeviceTokensInternal(@Param('id') id: string) {
+    const tokens = await this.usersService.getActiveDeviceTokens(id);
+    return ResponseWrapper.success('Device tokens retrieved', {
+      userId: id,
+      tokens
+    });
   }
 }

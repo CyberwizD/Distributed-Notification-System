@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, ConflictException, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Inject, BadRequestException } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { PrismaService } from '../prisma/prisma.service';
+import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdatePreferenceDto } from './dto/update-preference.dto';
@@ -11,6 +12,7 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    private rabbitMQService: RabbitMQService,
   ) { }
 
   async create(createUserDto: CreateUserDto) {
@@ -135,6 +137,8 @@ export class UsersService {
   async updatePreferences(userId: string, updatePreferenceDto: UpdatePreferenceDto) {
     await this.findOne(userId); // Check if user exists
 
+    const oldPreferences = await this.getPreferences(userId);
+
     const preferences = await this.prisma.userPreference.upsert({
       where: { userId },
       update: updatePreferenceDto,
@@ -143,6 +147,19 @@ export class UsersService {
         ...updatePreferenceDto,
       },
     });
+
+    // Publish preferences updated event
+    try {
+      await this.rabbitMQService.publish('user.preferences.updated', {
+        userId,
+        oldPreferences,
+        newPreferences: preferences,
+        changes: Object.keys(updatePreferenceDto)
+      });
+      console.log('✅ User preferences updated event published');
+    } catch (eventError) {
+      console.error('❌ Failed to publish preferences updated event:', eventError);
+    }
 
     // Clear cache
     await this.cacheManager.del(`user:${userId}`);
@@ -215,7 +232,15 @@ export class UsersService {
   async addDeviceToken(userId: string, token: string, platform: string) {
     await this.findOne(userId); // Check if user exists
 
-    return this.prisma.deviceToken.upsert({
+ if (!token || !platform) {
+      throw new BadRequestException('Token and platform are required');
+    }
+
+    if (!['ios', 'android', 'web'].includes(platform)) {
+      throw new BadRequestException('Platform must be ios, android, or web');
+    }
+
+    const deviceToken = await this.prisma.deviceToken.upsert({
       where: { token },
       update: {
         userId,
@@ -228,6 +253,20 @@ export class UsersService {
         platform,
       },
     });
+
+     // Publish device token added event
+    try {
+      await this.rabbitMQService.publish('user.device-token.added', {
+        userId,
+        deviceToken: deviceToken.token,
+        platform: deviceToken.platform
+      });
+      console.log('✅ Device token added event published');
+    } catch (eventError) {
+      console.error('❌ Failed to publish device token added event:', eventError);
+    }
+
+    return deviceToken;
   }
 
   async removeDeviceToken(userId: string, token: string) {
@@ -240,7 +279,20 @@ export class UsersService {
         isActive: false,
       },
     });
+
+     try {
+      await this.rabbitMQService.publish('user.device-token.removed', {
+        userId,
+        deviceToken: token
+      });
+      console.log('✅ Device token removed event published');
+    } catch (eventError) {
+      console.error('❌ Failed to publish device token removed event:', eventError);
+    }
   }
+
+
+  
 
   async getActiveDeviceTokens(userId: string) {
     return this.prisma.deviceToken.findMany({

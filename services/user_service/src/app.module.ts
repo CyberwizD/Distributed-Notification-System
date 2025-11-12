@@ -9,14 +9,16 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-redis-yet';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RabbitMQModule } from './common/rabbitmq/rabbitmq.module';
 import databaseConfig from './config/database.config';
 import redisConfig from './config/redis.config';
 import jwtConfig from './config/jwt.config';
+import serviceConfig from './config/service.config';
 
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, load: [databaseConfig, redisConfig, jwtConfig] }),
+    ConfigModule.forRoot({ isGlobal: true, load: [databaseConfig, redisConfig, jwtConfig, serviceConfig] }),
     CacheModule.registerAsync({
       isGlobal: true,
       imports: [ConfigModule],
@@ -34,6 +36,7 @@ import jwtConfig from './config/jwt.config';
     AuthModule,
     UsersModule,
     HealthModule,
+    RabbitMQModule,
     PrismaModule,
   ],
   controllers: [AppController],

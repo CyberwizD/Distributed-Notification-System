@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { PrismaService } from '../prisma/prisma.service';
+import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
 
 @ApiTags('Health')
 @Controller('health')
@@ -10,6 +11,7 @@ export class HealthController {
     constructor(
         private prisma: PrismaService,
         @Inject(CACHE_MANAGER) private cacheManager: Cache,
+        private rabbitMQService: RabbitMQService,
     ) { }
 
     @Get()
@@ -17,11 +19,14 @@ export class HealthController {
     async check() {
         const dbStatus = await this.checkDatabase();
         const cacheStatus = await this.checkCache();
+        const rabbitMQStatus = await this.rabbitMQService.isHealthy();
 
-        const status = dbStatus && cacheStatus ? 'healthy' : 'unhealthy';
+        const status = dbStatus && cacheStatus && rabbitMQStatus ? 'healthy' : 'unhealthy';
 
         return {
             status,
+            service: 'user-service',
+            version: '1.0.0',
             timestamp: new Date().toISOString(),
             checks: {
                 database: dbStatus ? 'connected' : 'disconnected',
@@ -51,3 +56,4 @@ export class HealthController {
         }
     }
 }
+
