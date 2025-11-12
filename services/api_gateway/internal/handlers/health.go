@@ -8,7 +8,7 @@ import (
 
 // HealthCheck handles the health check endpoint.
 func HealthCheck(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
+	respondSuccess(c, http.StatusOK, "api-gateway healthy", gin.H{
 		"status": "ok",
 	})
 }
