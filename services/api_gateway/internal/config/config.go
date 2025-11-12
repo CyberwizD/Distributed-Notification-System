@@ -15,6 +15,7 @@ type Config struct {
 	RedisURL           string
 	RabbitMQURL        string
 	UserServiceURL     string
+	UserServiceAPIKey  string
 	TemplateServiceURL string
 	UserPrefCacheTTL   time.Duration
 	LogLevel           string
@@ -33,6 +34,7 @@ func Load() (*Config, error) {
 		RedisURL:           getEnv("REDIS_URL", ""),
 		RabbitMQURL:        getEnv("RABBITMQ_URL", ""),
 		UserServiceURL:     getEnv("USER_SERVICE_URL", ""),
+		UserServiceAPIKey:  getEnv("USER_SERVICE_INTERNAL_API_KEY", ""),
 		TemplateServiceURL: getEnv("TEMPLATE_SERVICE_URL", ""),
 		UserPrefCacheTTL:   getEnvAsDuration("USER_PREF_CACHE_TTL", 5*time.Minute),
 		LogLevel:           getEnv("LOG_LEVEL", "info"),
