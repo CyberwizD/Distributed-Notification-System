@@ -22,7 +22,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags='-w -s -extldflags "-static"' \
     -a -installsuffix cgo \
-    -o push-service ./cmd/server
+    -o push-service ./cmd/consumer
 
 # Final stage
 FROM alpine:latest
@@ -37,10 +37,10 @@ RUN adduser -D -g '' appuser
 WORKDIR /app
 
 # Copy the built binary from builder stage
-COPY --from=builder /builder/push-service /cmd/server
+COPY --from=builder /builder/push-service /push-service
 
 # EXPOSE port
 EXPOSE 8081
 
 # Run the application
-ENTRYPOINT ["/cmd/server"]
+ENTRYPOINT ["/push-service"]

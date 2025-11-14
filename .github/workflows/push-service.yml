@@ -1,0 +1,73 @@
+name: Push Service CI
+
+on:
+  push:
+    paths:
+      - 'services/push_service/**'
+      - 'shared/**'
+      - 'go.work'
+      - '.github/workflows/push-service.yml'
+  pull_request:
+    paths:
+      - 'services/push_service/**'
+      - 'shared/**'
+      - 'go.work'
+      - '.github/workflows/push-service.yml'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/push_service
+    env:
+      REGISTRY: ghcr.io
+      SERVICE_NAME: push-service
+      GOTOOLCHAIN: auto
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          check-latest: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build binary
+        run: go build ./...
+
+      - name: Set image name
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE=${REGISTRY}/${OWNER}/${SERVICE_NAME}" >> $GITHUB_ENV
+
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker build -t $IMAGE:${{ github.sha }} -f Dockerfile .
+          docker tag $IMAGE:${{ github.sha }} $IMAGE:latest
+
+      - name: Push image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest

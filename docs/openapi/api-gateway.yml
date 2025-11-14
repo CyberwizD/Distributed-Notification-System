@@ -1,0 +1,106 @@
+openapi: 3.0.3
+info:
+  title: API Gateway
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8080/v1
+paths:
+  /notifications/send:
+    post:
+      summary: Queue a notification
+      operationId: queueNotification
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRequest'
+      responses:
+        '202':
+          description: Notification queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseEnvelope'
+  /notifications/{request_id}/status:
+    get:
+      summary: Retrieve notification status
+      operationId: getNotificationStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Status found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseEnvelope'
+        '404':
+          description: Not found
+  /health:
+    get:
+      summary: Health probe
+      responses:
+        '200':
+          description: OK
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    NotificationRequest:
+      type: object
+      required:
+        - request_id
+        - user_id
+        - channel
+        - template_slug
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          enum: [email, push]
+        template_slug:
+          type: string
+        notification_type:
+          type: string
+          enum: [email, push]
+        variables:
+          type: object
+          additionalProperties: true
+        priority:
+          type: string
+          enum: [low, normal, high]
+        metadata:
+          type: object
+          additionalProperties: true
+    ResponseEnvelope:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+        error:
+          type: string
+        meta:
+          type: object

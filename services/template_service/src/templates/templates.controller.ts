@@ -1,11 +1,12 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
+  Controller,
+  Delete,
+  Get,
   Param,
   Patch,
-  Delete,
+  Post,
+  Query,
 } from '@nestjs/common';
 import { TemplatesService } from './templates.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
@@ -56,8 +57,8 @@ export class TemplatesController {
   }
 
   @Get(':id/active')
-  getActiveVersion(@Param('id') id: string) {
-    return this.templatesService.getActiveVersion(id);
+  getActiveVersion(@Param('id') id: string, @Query('locale') locale?: string) {
+    return this.templatesService.getActiveVersion(id, locale);
   }
 
   @Post('render')

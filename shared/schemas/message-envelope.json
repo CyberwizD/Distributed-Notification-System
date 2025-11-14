@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MessageEnvelope",
+  "type": "object",
+  "required": ["request_id", "correlation_id", "created_at", "channel", "user", "template", "variables", "retry_count"],
+  "properties": {
+    "request_id": { "type": "string", "format": "uuid" },
+    "correlation_id": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "channel": { "type": "string", "enum": ["email", "push"] },
+    "user": {
+      "type": "object",
+      "required": ["id", "email"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "email": { "type": "string", "format": "email" },
+        "locale": { "type": "string" },
+        "push_tokens": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["token", "platform"],
+            "properties": {
+              "token": { "type": "string" },
+              "platform": { "type": "string", "enum": ["ios", "android", "web"] },
+              "provider": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "template": {
+      "type": "object",
+      "required": ["slug"],
+      "properties": {
+        "slug": { "type": "string" },
+        "locale": { "type": "string" },
+        "version": { "type": "integer", "minimum": 0 },
+        "subject": { "type": "string" },
+        "body": { "type": "string" }
+      }
+    },
+    "variables": { "type": "object", "additionalProperties": true },
+    "provider_overrides": { "type": "object", "additionalProperties": true },
+    "retry_count": { "type": "integer", "minimum": 0 }
+  }
+}

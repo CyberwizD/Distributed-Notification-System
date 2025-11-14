@@ -1,0 +1,20 @@
+openapi: 3.0.3
+info:
+  title: Push Service
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8081
+paths:
+  /health:
+    get:
+      summary: Health probe
+      responses:
+        '200':
+          description: OK
+  /metrics:
+    get:
+      summary: Prometheus-style metrics
+      responses:
+        '200':
+          description: Text metrics
+components: {}
