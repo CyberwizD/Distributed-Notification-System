@@ -19,6 +19,7 @@ RUN npm install
 COPY . .
 
 # Build the application
+RUN npx prisma generate
 RUN npm run build
 
 # Final stage
