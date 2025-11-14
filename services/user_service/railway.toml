@@ -1,0 +1,22 @@
+[build]
+builder = "nixpacks"
+buildCommand = "cd services/user_service && npm install && npx prisma generate && npm run build"
+
+[deploy]
+startCommand = "cd services/user_service && node dist/main"
+healthcheckPath = "/api/v1/health"
+healthcheckTimeout = 300
+
+[env]
+PORT = "3001"
+
+# Database will be auto-provisioned by Railway
+DATABASE_URL = "${POSTGRES_URL}"
+
+# Other services you need
+REDIS_URL = "${REDIS_URL}"
+RABBITMQ_URL = "${RABBITMQ_URL}"
+
+# Your secrets
+JWT_SECRET = "${JWT_SECRET}"
+INTERNAL_API_KEY = "${INTERNAL_API_KEY}"

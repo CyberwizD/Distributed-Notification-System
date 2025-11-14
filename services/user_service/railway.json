@@ -1,0 +1,11 @@
+{
+  "build": {
+    "builder": "nixpacks",
+    "buildCommand": "cd services/user_service && npm install && npx prisma generate && npm run build"
+  },
+  "deploy": {
+    "startCommand": "cd services/user_service && node dist/main",
+    "healthcheckPath": "/api/v1/health",
+    "healthcheckTimeout": 300
+  }
+}
