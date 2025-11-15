@@ -11,6 +11,7 @@ RUN npm set progress=false \
     && (npm ci --prefer-offline --no-audit --no-fund || npm ci --no-audit --no-fund)
 
 COPY . .
+RUN npx prisma generate
 RUN npm run build
 
 FROM node:20-alpine

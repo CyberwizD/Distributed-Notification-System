@@ -13,8 +13,15 @@ export class RabbitMQHealthIndicator {
   ) {}
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
-    return this.rabbitMQService.getChannel()
-      ? this.health.check(key).up()
-      : this.health.check(key).down('RabbitMQ is not connected');
+    const channel = this.rabbitMQService.getChannel();
+    if (channel) {
+      // The library keeps the connection object available.
+      // If 'closeReason' is present, the connection is closed or closing.
+      if ((channel.connection as any).closeReason) {
+        return this.health.check(key).down('RabbitMQ connection is closed.');
+      }
+      return this.health.check(key).up();
+    }
+    return this.health.check(key).down('RabbitMQ is not connected');
   }
 }
